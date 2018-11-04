@@ -5,6 +5,7 @@ train_std=0
 
 
 
+import numpy as np
 class nn:
     #nn for classifier works for only one layer
     def __init__(self, no_of_inputs, no_of_outputs, HUs,no_of_hidden_layers=1, activation=["sigmoid","sigmoid"],regu=0, dropout=0, weights_seed=0):
@@ -45,24 +46,58 @@ class nn:
         return self.weights
     
     def sigmoid_forward(self,z):
+#         print("sig forward")
         return 1/(1+np.exp(-z))
         
     def sigmoid_backward(self,z):
+#         print("sig bckward")
         return z*(1-z)
+    
+    def tanh_forward(self,z):
+#         print("tanh forwad")
+        return np.tanh(z) 
+    
+    def tanh_backward(self,z):
+#         print("tanh backward")
+        return 1-z**2
+    
+    #not working relu
+    def relu_forward(self,z):
+#         print("relu forwad")
+        return z * (z > 0) 
+    
+    def relu_backward(self,z):
+#         print("relu backward")
+        
+        return 1 * (z > 0)
+    
+    def softplus_forward(self,z):
+        return np.log(1+np.exp(z)) 
+    
+    def softplus_backward(self,z): 
+        return 1-1/np.exp(z)
     
     def activation_forward(self,z,act_index):
         if(self.act[act_index]=="sigmoid"):
             return self.sigmoid_forward(z)
+        elif (self.act[act_index]=="softplus"):
+            return self.softplus_forward(z)
+        elif (self.act[act_index]=="tanh"):
+            return self.tanh_forward(z)
         elif (self.act[act_index]=="relu"):
-            pass
+            return self.relu_forward(z)
         else:
             print("error invalid activation")
     
     def activation_backward(self,z,act_index):
         if(self.act[act_index]=="sigmoid"):
             return self.sigmoid_backward(z)
+        elif (self.act[act_index]=="softplus"):
+            return self.softplus_backward(z)
+        elif (self.act[act_index]=="tanh"):
+            return self.tanh_backward(z)
         elif (self.act[act_index]=="relu"):
-            pass
+            return self.relu_backward(z)
         else:
             print("error invalid activation")
     
@@ -101,6 +136,7 @@ class nn:
         loss=0
         #ylog(y_hat)+(1-y)log(1-y_hat)
         loss_matrix=np.multiply(y,np.log(y_hat))+np.multiply(1-y,np.log(1-y_hat))
+        loss_matrix=np.nan_to_num(loss_matrix)
         #computing sum of squares of weights
         sum_square=0
         for i in range(0,len(self.weights)):
@@ -114,8 +150,9 @@ class nn:
         self.gradients=[]
         dE_dsigmaL=(-1)*(np.multiply(y,1/y_hat)-np.multiply(1-y,1/(1-y_hat)))
 #         dE_dsigmaL=np.multiply(dE_dsigmaL_init,y)-np.multiply(dE_dsigmaL_init,1-y)
-        
+        dE_dsigmaL=np.nan_to_num(dE_dsigmaL)
         dE_dsigmaL_dsumL=np.multiply(dE_dsigmaL,self.activation_backward(self.layers[-1],-1))
+        dE_dsigmaL_dsumL=np.nan_to_num(dE_dsigmaL_dsumL)
         #average
         #gradient for the last layer
         #update weight with this gradient
@@ -127,7 +164,8 @@ class nn:
             weights_wo_bias=self.weights[i][1:,:]
             dE_dsigmaL_dsumL_dsigmal=np.matmul(dE_dsigmaL_dsumL,weights_wo_bias.T)
             layer_wo_bias=self.layers[i][:,1:]
-            dE_dsigmaL_dsumL=np.multiply(dE_dsigmaL_dsumL_dsigmal,self.activation_backward(layer_wo_bias,i))
+            dE_dsigmaL_dsumL=np.multiply(dE_dsigmaL_dsumL_dsigmal,self.activation_backward(layer_wo_bias,i-1))
+            dE_dsigmaL_dsumL=np.nan_to_num(dE_dsigmaL_dsumL)
             dE_dsigmal_dsuml_dw=np.matmul(self.layers[i-1].T,dE_dsigmaL_dsumL)*(1/self.layers[i-1].shape[0])
             self.gradients.insert(0,np.copy(dE_dsigmal_dsuml_dw))
         
@@ -155,6 +193,9 @@ class nn:
 #         self.layers.append(layer1nodes)
 #         print(len(self.layers))
         return layer1nodes
+        
+        
+               
 
 def preprocessData(df):
     df['post_day'] = df['post_day'].factorize(sort=True)[0]
@@ -172,7 +213,7 @@ def preprocessData(df):
     train_std=df_norm.std()
 #     df_norm=(df_norm-df_norm.min())/(df_norm.max()-df_norm.min())
     df_norm.fillna(0,inplace=True)
-    print(df_norm.head(5))
+    # print(df_norm.head(5))
     df_norm=pd.concat([df_norm, df['target']], axis=1)
 #     df_norm=df_norm[['page_likes','daily_crowd','target']]
     return df_norm
@@ -196,8 +237,8 @@ def onehotencoding(y,max_y):
     return encode_mat
 
 def train(network,input_x,y_encod,logfile,lr=0.001,no_of_epochs=2500,batchSize=100,do_validate=0,val_x=0,y_val_encod=0):
-    print(input_x.shape)
-    print(y_encod.shape)
+    # print(input_x.shape)
+    # print(y_encod.shape)
     no_of_batches=int(input_x.shape[0]/batchSize)
     val_loss_arr=np.array([])
     file=open(logfile,"w")
@@ -235,7 +276,7 @@ def train(network,input_x,y_encod,logfile,lr=0.001,no_of_epochs=2500,batchSize=1
             val_loss_arr=np.append(val_loss_arr,val_loss)
             if(val_loss_arr.shape[0]>=5):
                 std_val=np.std(val_loss_arr[-5:])
-                if(std_val<0.001):
+                if(std_val<0.004):
                     lr=lr/4
                     val_loss_arr=np.array([])
         if ((i+1)%100==0 or i==0):
@@ -299,9 +340,9 @@ def main(taskno):
     
     elif(taskno==3):
         val_percent=0.1
-        val_size=int(val_percent*len(df.index))
+        val_size=int(val_percent*len(train_data.index))
         val_data=train_data.tail(val_size)
-        input_data_train=train_data.head(len(df.index)-val_size)
+        input_data_train=train_data.head(len(train_data.index)-val_size)
         input_data=input_data_train.values
         #train data
         input_x=input_data[:,:-1]
@@ -315,27 +356,27 @@ def main(taskno):
         y_val_encod=onehotencoding(y_val_label,max_y)
 
 
-        # network1=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100,100],regu=0.01,no_of_hidden_layers=2, activation=["sigmoid","sigmoid","sigmoid"])
+        network1=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100,100],regu=0.01,no_of_hidden_layers=2, activation=["sigmoid","sigmoid","sigmoid"])
         
-        # train(network1,input_x,y_encod,"log/task3_log_1.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+        train(network1,input_x,y_encod,"log/task3_log_1.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
 
-        # #testing
-        # test_x=test_data.values
-        # testOutput(network1,test_x,"log/submission_task3_1.csv")
+        #testing
+        test_x=test_data.values
+        testOutput(network1,test_x,"log/submission_task3_1.csv")
 
 
-        # network2=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],regu=0.01,no_of_hidden_layers=1, activation=["sigmoid","sigmoid"])
+        network2=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],regu=0.01,no_of_hidden_layers=1, activation=["sigmoid","sigmoid"])
         
-        # train(network2,input_x,y_encod,"log/task3_log_2.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+        train(network2,input_x,y_encod,"log/task3_log_2.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
 
-        # #testing
-        # test_x=test_data.values
-        # testOutput(network2,test_x,"log/submission_task3_2.csv")
+        #testing
+        test_x=test_data.values
+        testOutput(network2,test_x,"log/submission_task3_2.csv")
 
 
-        network3=nn(no_of_inputs=24,no_of_outputs=3,HUs=[48,96,48],regu=0.01,no_of_hidden_layers=3, activation=["sigmoid","sigmoid","sigmoid","sigmoid"])
+        network3=nn(no_of_inputs=24,no_of_outputs=3,HUs=[48,96,48],regu=0.001,no_of_hidden_layers=3, activation=["sigmoid","sigmoid","sigmoid","sigmoid"])
         
-        train(network3,input_x,y_encod,"log/task3_log_3.csv",lr=0.01,no_of_epochs=3000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+        train(network3,input_x,y_encod,"log/task3_log_3.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
 
         #testing
         test_x=test_data.values
@@ -343,9 +384,9 @@ def main(taskno):
 
 
 
-        network4=nn(no_of_inputs=24,no_of_outputs=3,HUs=[96,48,96],regu=0.01,no_of_hidden_layers=3, activation=["sigmoid","sigmoid","sigmoid","sigmoid"])
+        network4=nn(no_of_inputs=24,no_of_outputs=3,HUs=[96,48,96],regu=0.0001,no_of_hidden_layers=3, activation=["sigmoid","sigmoid","sigmoid","sigmoid"])
         
-        train(network4,input_x,y_encod,"log/task3_log_4.csv",lr=0.01,no_of_epochs=3000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+        train(network4,input_x,y_encod,"log/task3_log_4.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
 
         #testing
         test_x=test_data.values
@@ -353,9 +394,9 @@ def main(taskno):
 
 
 
-        network5=nn(no_of_inputs=24,no_of_outputs=3,HUs=[48,96,48],regu=0.1,no_of_hidden_layers=3, activation=["sigmoid","sigmoid","sigmoid","sigmoid"])
+        network5=nn(no_of_inputs=24,no_of_outputs=3,HUs=[48,96,48],regu=0.0001,no_of_hidden_layers=3, activation=["sigmoid","sigmoid","sigmoid","sigmoid"])
         
-        train(network5,input_x,y_encod,"log/task3_log_5.csv",lr=0.01,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+        train(network5,input_x,y_encod,"log/task3_log_5.csv",lr=0.1,no_of_epochs=6000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
 
         #testing
         test_x=test_data.values
@@ -363,7 +404,39 @@ def main(taskno):
 
 
     elif(taskno==4):
-        pass
+
+        val_percent=0.1
+        val_size=int(val_percent*len(train_data.index))
+        val_data=train_data.tail(val_size)
+        input_data_train=train_data.head(len(train_data.index)-val_size)
+        input_data=input_data_train.values
+        #train data
+        input_x=input_data[:,:-1]
+        y_label=input_data[:,-1]
+        y_encod=onehotencoding(y_label,max_y)
+        
+        #val data
+        val_input=val_data.values
+        val_x=val_input[:,:-1]
+        y_val_label=val_input[:,-1]
+        y_val_encod=onehotencoding(y_val_label,max_y)
+
+        network1=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],regu=0,no_of_hidden_layers=1, activation=["relu","sigmoid"])
+        
+        train(network1,input_x,y_encod,"log/task4_log_1.csv",lr=0.01,no_of_epochs=300,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+
+        #testing
+        test_x=test_data.values
+        testOutput(network1,test_x,"log/submission_task4_1.csv")
+
+        network2=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],regu=0,no_of_hidden_layers=1, activation=["tanh","sigmoid"])
+        
+        train(network2,input_x,y_encod,"log/task4_log_2.csv",lr=0.01,no_of_epochs=2000,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+
+        #testing
+        test_x=test_data.values
+        testOutput(network2,test_x,"log/submission_task4_2.csv")
+        
     elif(taskno==5):
         pass
 
@@ -372,4 +445,4 @@ def main(taskno):
 
 
 if __name__ == '__main__':
-    main(3)
+    main(4)
