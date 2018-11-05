@@ -1,11 +1,16 @@
 import pandas as pd
 import numpy as np
+import os
+import numpy as np
+import sys
+
 train_mean=0
 train_std=0
 
 
 
-import numpy as np
+
+
 class nn:
     #nn for classifier works for only one layer
     def __init__(self, no_of_inputs, no_of_outputs, HUs,no_of_hidden_layers=1, activation=["sigmoid","sigmoid"],regu=0, dropout=0, weights_seed=0):
@@ -101,24 +106,37 @@ class nn:
         else:
             print("error invalid activation")
     
-    def feed_forward(self, input_arr):
+    def feed_forward(self, input_arr,dropout=0):
 #         print(input_arr.shape)
+        p=1-dropout
+        
+        
         self.inps = np.ones((input_arr.shape[0],self.no_of_inputs+1))
         self.inps[:,1:self.no_of_inputs+1]=input_arr
         self.layers=[]
         self.layers.append(self.inps)
-        layer0nodes=np.matmul(self.inps,self.weights[0])
+        u1 = np.random.binomial(1, p, size=self.layers[-1].shape) / p
+        i1 = np.copy(self.layers[-1])*u1
+        self.layers[-1] = np.copy(self.layers[-1])*u1
+        layer0nodes=np.matmul(i1,self.weights[0])
         layer0nodes=self.activation_forward(layer0nodes,0)
         layer0nodes_bias=np.ones((layer0nodes.shape[0],layer0nodes.shape[1]+1))
         layer0nodes_bias[:,1:layer0nodes.shape[1]+1]=layer0nodes
         #for all the internal layer nodes
+        p=1
         self.layers.append(layer0nodes_bias)
+        u1 = np.random.binomial(1, p, size=self.layers[-1].shape) / p
+        i1 = np.copy(self.layers[-1])*u1
+        self.layers[-1] = np.copy(self.layers[-1])*u1
         for i in range(1,self.no_of_hidden_layers):
-            layerinodes=np.matmul(self.layers[-1],self.weights[i])
+            layerinodes=np.matmul(i1,self.weights[i])
             layerinodes=self.activation_forward(layerinodes,i)
             layerinodes_bias=np.ones((layerinodes.shape[0],layerinodes.shape[1]+1))
             layerinodes_bias[:,1:layerinodes.shape[1]+1]=layerinodes
             self.layers.append(np.copy(layerinodes_bias))
+            u1 = np.random.binomial(1, p, size=self.layers[-1].shape) / p
+            i1 = np.copy(self.layers[-1])*u1
+            self.layers[-1] = np.copy(self.layers[-1])*u1
             
         #for the last layer
         layer1nodes=np.matmul(self.layers[-1],self.weights[-1])
@@ -196,6 +214,9 @@ class nn:
         
         
                
+        
+        
+               
 
 def preprocessData(df):
     df['post_day'] = df['post_day'].factorize(sort=True)[0]
@@ -204,8 +225,8 @@ def preprocessData(df):
     # print(df)
     df = df.sample(frac=1,random_state=1).reset_index(drop=True)
     df_norm=df.drop(labels='target', axis=1)
-    print(df_norm.mean())
-    print(df_norm.std())
+    # print(df_norm.mean())
+    # print(df_norm.std())
     df_norm=(df_norm-df_norm.mean())/df_norm.std()
     global train_mean
     global train_std
@@ -236,7 +257,7 @@ def onehotencoding(y,max_y):
     encode_mat[rows,y-1]=1
     return encode_mat
 
-def train(network,input_x,y_encod,logfile,lr=0.001,no_of_epochs=2500,batchSize=100,do_validate=0,val_x=0,y_val_encod=0):
+def train(network,input_x,y_encod,logfile,lr=0.001,dropout=0,no_of_epochs=2500,batchSize=100,do_validate=0,val_x=0,y_val_encod=0):
     # print(input_x.shape)
     # print(y_encod.shape)
     no_of_batches=int(input_x.shape[0]/batchSize)
@@ -253,7 +274,7 @@ def train(network,input_x,y_encod,logfile,lr=0.001,no_of_epochs=2500,batchSize=1
             idx = np.random.randint(input_x.shape[0], size=batchSize)
             input_x_train=input_x[idx,:]
             y_encod_train=y_encod[idx,:]
-            y_pred=network.feed_forward(input_x_train)
+            y_pred=network.feed_forward(input_x_train,dropout)
 
             train_loss=train_loss+network.compute_cross_entropy_err(y_pred,y_encod_train)
         #         print(y_pred)
@@ -276,9 +297,9 @@ def train(network,input_x,y_encod,logfile,lr=0.001,no_of_epochs=2500,batchSize=1
             val_loss_arr=np.append(val_loss_arr,val_loss)
             if(val_loss_arr.shape[0]>=5):
                 std_val=np.std(val_loss_arr[-5:])
-                if(std_val<0.004):
-                    lr=lr/4
-                    val_loss_arr=np.array([])
+                # if(std_val<0.004):
+                #     lr=lr/4
+                #     val_loss_arr=np.array([])
         if ((i+1)%100==0 or i==0):
             train_loss=train_loss*1/no_of_batches
             print("train loss: "+str(train_loss))
@@ -313,17 +334,20 @@ def testOutput(network,input_x_test,out_file):
 
 
 
-def main(taskno):
+def main(trainfile,tesfile,taskno):
     #training data
-    df = pd.read_csv('./../data/train.csv')
+    # df = pd.read_csv('./../data/train.csv')
+    df = pd.read_csv(trainfile)
     train_data=preprocessData(df)
 
     #testing data
-    df_test = pd.read_csv('./../data/test.csv')
+    df_test = pd.read_csv(tesfile)
+    # df_test = pd.read_csv('./../data/test.csv')
     test_data=preprocessData_test(df_test)
 
     max_y=3 #max no of labels
-
+    taskno=int(taskno)
+    
     if(taskno==2):
         network1=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],no_of_hidden_layers=1, activation=["sigmoid","sigmoid"])
         input_data=train_data.values
@@ -438,11 +462,45 @@ def main(taskno):
         testOutput(network2,test_x,"log/submission_task4_2.csv")
         
     elif(taskno==5):
-        pass
+        val_percent=0.1
+        val_size=int(val_percent*len(train_data.index))
+        val_data=train_data.tail(val_size)
+        input_data_train=train_data.head(len(train_data.index)-val_size)
+        input_data=input_data_train.values
+        #train data
+        input_x=input_data[:,:-1]
+        y_label=input_data[:,-1]
+        y_encod=onehotencoding(y_label,max_y)
+        
+        #val data
+        val_input=val_data.values
+        val_x=val_input[:,:-1]
+        y_val_label=val_input[:,-1]
+        y_val_encod=onehotencoding(y_val_label,max_y)
+
+        # network1=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],regu=0,no_of_hidden_layers=1, activation=["tanh","sigmoid"])
+        
+        # train(network1,input_x,y_encod,"log/task5_log_1.csv",lr=0.01,dropout=0.3,no_of_epochs=500,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+
+        # #testing
+        # test_x=test_data.values
+        # testOutput(network1,test_x,"log/submission_task5_1.csv")
+
+        
+
+        network2=nn(no_of_inputs=24,no_of_outputs=3,HUs=[100],regu=0.001,no_of_hidden_layers=1, activation=["tanh","sigmoid"])
+        
+        train(network2,input_x,y_encod,"log/task5_log_2.csv",lr=0.001,no_of_epochs=200,do_validate=1,val_x=val_x,y_val_encod=y_val_encod)
+
+        #testing
+        test_x=test_data.values
+        testOutput(network2,test_x,"log/submission_task5_2.csv")
 
 
 
 
 
 if __name__ == '__main__':
-    main(4)
+    if not os.path.exists("log"):
+        os.makedirs("log")
+    main(sys.argv[1],sys.argv[2],sys.argv[3])
